@@ -89,7 +89,37 @@ public class MainActivity extends Activity {
   void form(){panel();header("Catat Token Listrik");label("Nama pelanggan",16);name=field("Nama pelanggan",1);label("Nomor meter / ID PLN",16);meter=field("Nomor meter",2);label("Pilih nominal token",16);
     nominal=new Spinner(this);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Rp5.000","Rp10.000","Rp15.000","Rp20.000","Rp50.000","Rp100.000","Rp200.000","Rp500.000","Rp1.000.000"});nominal.setAdapter(adapter);root.addView(nominal);
     priceText=label("",20);nominal.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){priceText.setText("Harga jual: "+money(getPrice(amounts[pos])));}});
-    label("Nomor token (20 digit)",16);token=field("Masukkan 20 angka",2);token.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(20)});
+    label("Nomor token (20 digit)",16);token=field("Masukkan 20 angka",2);
+    token.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(24)});
+    token.addTextChangedListener(new android.text.TextWatcher(){
+      boolean editing=false;
+      public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+      public void onTextChanged(CharSequence s,int start,int before,int count){}
+      public void afterTextChanged(android.text.Editable e){
+        if(editing)return;
+        String digits=e.toString().replaceAll("[^0-9]","");
+        if(digits.length()>20)digits=digits.substring(0,20);
+        StringBuilder formatted=new StringBuilder();
+        for(int i=0;i<digits.length();i++){if(i>0&&i%4==0)formatted.append(' ');formatted.append(digits.charAt(i));}
+        String result=formatted.toString();
+        if(!result.equals(e.toString())){
+          int cursor=token.getSelectionStart(),beforeDigits=0;
+          for(int i=0;i<Math.min(Math.max(cursor,0),e.length());i++)if(Character.isDigit(e.charAt(i)))beforeDigits++;
+          int newCursor=Math.min(result.length(),beforeDigits+(beforeDigits>0?(beforeDigits-1)/4:0));
+          editing=true;token.setText(result);token.setSelection(newCursor);editing=false;
+        }
+      }
+    });
+    button("📋 TEMPEL TOKEN",()->{
+      android.content.ClipboardManager cb=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+      if(cb==null||!cb.hasPrimaryClip()){toast("Clipboard kosong");return;}
+      ClipData clip=cb.getPrimaryClip();
+      if(clip==null||clip.getItemCount()==0){toast("Clipboard kosong");return;}
+      CharSequence pasted=clip.getItemAt(0).coerceToText(this);
+      String digits=pasted==null?"":pasted.toString().replaceAll("[\\s-]","");
+      if(!digits.matches("[0-9]{20}")){toast("Teks yang ditempel harus tepat 20 angka token");return;}
+      token.setText(digits);token.setSelection(token.length());
+    });
     button("Pilih Pelanggan Tersimpan",()->chooseCustomer());button("Simpan Transaksi",()->store());button("Kembali",()->home());
   }
   void chooseCustomer(){
@@ -138,7 +168,7 @@ public class MainActivity extends Activity {
   }
   String receipt(JSONObject o){return "IING STD TOKEN LISTRIK\n------------------------------\nNama: "+o.optString("name")+"\nNo Meter: "+o.optString("meter")+"\nNominal: "+money(o.optString("amount"))+"\nHarga: "+money(getPrice(o.optString("amount")))+"\nTanggal: "+o.optString("date")+"\nTOKEN:\n"+o.optString("token")+"\n------------------------------\nSimpan nomor token Anda\n";}
   void pricePage(){panel();header("Atur Daftar Harga");for(String a:amounts){label("Token "+money(a),16);EditText e=field("Harga jual",2);e.setText(getPrice(a));button("Simpan harga "+money(a),()->{try{long p=Long.parseLong(val(e));if(p<0)throw new Exception();prices.put(a,String.valueOf(p));save();toast("Harga tersimpan");}catch(Exception x){toast("Masukkan harga yang valid");}});}button("Kembali",()->home());}
-  void history(){panel();header("Riwayat Transaksi");EditText search=field("Cari nama / nomor meter",1);LinearLayout list=new LinearLayout(this);list.setOrientation(1);root.addView(list);Runnable render=()->{list.removeAllViews();String q=val(search).toLowerCase();for(int i=records.length()-1;i>=0;i--){JSONObject o=records.optJSONObject(i);if(o==null)continue;if(!(o.optString("name")+" "+o.optString("meter")).toLowerCase().contains(q))continue;Button b=new Button(this);b.setAllCaps(false);b.setText(o.optString("name")+" • "+money(o.optString("amount"))+"\n"+o.optString("date"));list.addView(b);b.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Detail token").setMessage(receipt(o)).setPositiveButton("Cetak",(d,w)->{lastReceipt=receipt(o);print();}).setNeutralButton("Salin Token",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Token PLN",o.optString("token")));toast("Token disalin");}).setNegativeButton("Tutup",null).show());}};search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){render.run();}public void afterTextChanged(android.text.Editable e){}});render.run();button("Kembali",()->home());}
+  void history(){panel();header("Riwayat Transaksi");EditText search=field("Cari nama / nomor meter",1);LinearLayout list=new LinearLayout(this);list.setOrientation(1);root.addView(list);Runnable render=()->{list.removeAllViews();String q=val(search).toLowerCase();for(int i=records.length()-1;i>=0;i--){JSONObject o=records.optJSONObject(i);if(o==null)continue;if(!(o.optString("name")+" "+o.optString("meter")).toLowerCase().contains(q))continue;Button b=new Button(this);b.setAllCaps(false);b.setText(o.optString("name")+" • "+money(o.optString("amount"))+"\n"+o.optString("date"));list.addView(b);b.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Detail token").setMessage(receipt(o)).setPositiveButton("Cetak Ulang Struk",(d,w)->{lastReceipt=receipt(o);print();}).setNeutralButton("Salin Token",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Token PLN",o.optString("token")));toast("Token disalin");}).setNegativeButton("Tutup",null).show());}};search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){render.run();}public void afterTextChanged(android.text.Editable e){}});render.run();button("Kembali",()->home());}
   // Black-and-white lightning emblem printed as ESC/POS raster graphics (58mm compatible).
   void printLogo(OutputStream out) throws Exception {
     final int width=96,height=96;
