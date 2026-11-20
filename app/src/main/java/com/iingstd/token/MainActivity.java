@@ -143,8 +143,60 @@ public class MainActivity extends Activity {
     out.write(new byte[]{10,10,10});
     out.flush();
   }
-  void print(){if(lastReceipt.isEmpty()){toast("Belum ada struk");return;}if(Build.VERSION.SDK_INT>=31&&checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},10);toast("Izinkan Bluetooth lalu tekan Cetak lagi");return;}
-    BluetoothAdapter adapter=BluetoothAdapter.getDefaultAdapter();if(adapter==null){toast("Bluetooth tidak tersedia");return;}Set<BluetoothDevice> paired=adapter.getBondedDevices();if(paired.isEmpty()){toast("Pasangkan printer melalui pengaturan Bluetooth dulu");return;}ArrayList<BluetoothDevice> devices=new ArrayList<>(paired);String[] names=new String[devices.size()];for(int i=0;i<names.length;i++)names[i]=devices.get(i).getName();new AlertDialog.Builder(this).setTitle("Pilih printer Bluetooth").setItems(names,(d,i)->{BluetoothDevice device=devices.get(i);String data=lastReceipt;new Thread(()->{BluetoothSocket socket=null;try{socket=device.createRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));socket.connect();OutputStream out=socket.getOutputStream();printReceipt(out,data);runOnUiThread(()->toast("Struk terkirim"));}catch(Exception e){runOnUiThread(()->toast("Gagal cetak: "+e.getMessage()));}finally{try{if(socket!=null)socket.close();}catch(Exception ignored){}}}).start();}).show();
+  void openBluetoothSettings(String message){
+    new AlertDialog.Builder(this).setTitle("Hubungkan printer DIGIT UP")
+      .setMessage(message+"\\n\\n1. Nyalakan printer.\\n2. Buka pengaturan Bluetooth dan pasangkan printer.\\n3. Kembali ke aplikasi, lalu tekan Cetak lagi.\\n\\nTransaksi yang sudah disimpan tetap aman.")
+      .setPositiveButton("Buka Pengaturan Bluetooth",(d,w)->{
+        try{startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS));}
+        catch(Exception e){toast("Tidak bisa membuka pengaturan Bluetooth");}
+      }).setNegativeButton("Nanti",null).show();
+  }
+  void print(){
+    if(lastReceipt.isEmpty()){toast("Belum ada struk");return;}
+    if(Build.VERSION.SDK_INT>=31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED){
+      requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},10);
+      toast("Izinkan perangkat terdekat, lalu tekan Cetak lagi");return;
+    }
+    BluetoothAdapter adapter=BluetoothAdapter.getDefaultAdapter();
+    if(adapter==null){toast("HP tidak mendukung Bluetooth");return;}
+    try{
+      if(!adapter.isEnabled()){
+        openBluetoothSettings("Bluetooth HP belum aktif.");return;
+      }
+      Set<BluetoothDevice> paired=adapter.getBondedDevices();
+      if(paired==null||paired.isEmpty()){
+        openBluetoothSettings("Printer belum terdaftar sebagai perangkat yang dipasangkan.");return;
+      }
+      ArrayList<BluetoothDevice> devices=new ArrayList<>(paired);
+      String[] names=new String[devices.size()];
+      for(int i=0;i<names.length;i++){
+        String n=devices.get(i).getName();
+        names[i]=(n==null||n.trim().isEmpty()?"Perangkat Bluetooth":n)+" ("+devices.get(i).getAddress()+")";
+      }
+      new AlertDialog.Builder(this).setTitle("Pilih printer Bluetooth")
+        .setItems(names,(d,i)->{
+          BluetoothDevice device=devices.get(i);String data=lastReceipt;
+          new Thread(()->{
+            BluetoothSocket socket=null;
+            try{
+              socket=device.createRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));
+              socket.connect();
+              OutputStream out=socket.getOutputStream();
+              printReceipt(out,data);
+              runOnUiThread(()->toast("Struk berhasil dikirim ke printer"));
+            }catch(Exception e){
+              runOnUiThread(()->new AlertDialog.Builder(this).setTitle("Gagal terhubung")
+                .setMessage("Pastikan printer menyala dan tidak sedang dipakai aplikasi lain.\\n\\nDetail: "+e.getMessage())
+                .setPositiveButton("Coba Lagi",(dialog,which)->print())
+                .setNegativeButton("Tutup",null).show());
+            }finally{try{if(socket!=null)socket.close();}catch(Exception ignored){}}
+          }).start();
+        }).setNeutralButton("Pengaturan Bluetooth",(d,w)->startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)))
+        .setNegativeButton("Batal",null).show();
+    }catch(SecurityException e){
+      if(Build.VERSION.SDK_INT>=31)requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},10);
+      else toast("Izin Bluetooth belum diberikan");
+    }
   }
   void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
 }
