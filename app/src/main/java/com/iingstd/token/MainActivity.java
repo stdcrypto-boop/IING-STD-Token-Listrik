@@ -120,10 +120,9 @@ public class MainActivity extends Activity {
   }
   void printReceipt(OutputStream out,String data) throws Exception {
     out.write(new byte[]{27,64});
-    printLogo(out);
-    for(String line:data.split("\\n")){
+    // Disable raster image commands: this printer outputs repeated symbols for the logo.\n    // Use universally supported text styling instead.\n    for(String line:data.split("\\n")){
       if(line.startsWith("IING STD TOKEN")) {
-        styledLine(out,"IING STD",0x18,1);
+        styledLine(out,"*** IING STD ***",0x08,1);
         styledLine(out,"TOKEN LISTRIK",0x08,1);
       } else if(line.startsWith("Nama: ")){
         styledLine(out,"NAMA PELANGGAN",0x08,0);
