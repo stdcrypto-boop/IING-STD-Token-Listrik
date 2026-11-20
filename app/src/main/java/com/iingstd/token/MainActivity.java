@@ -178,10 +178,11 @@ public class MainActivity extends Activity {
       } else if(line.equals("TOKEN:")){
         styledLine(out,"NOMOR TOKEN PLN",0x08,1);
       } else if(line.matches("[0-9]{20}")){
-        // Group the 20 digits into five blocks of four. Keep double-height
-        // bold text, but use normal width so spaced digits fit 58mm paper.
-        styledLine(out,line.substring(0,4)+" "+line.substring(4,8)+" "+line.substring(8,12),0x18,1);
-        styledLine(out,line.substring(12,16)+" "+line.substring(16,20),0x18,1);
+        // Double-width, double-height, bold token digits with four-digit groups.
+        // Two groups (9 characters including space) fit 58mm at double width.
+        styledLine(out,line.substring(0,4)+" "+line.substring(4,8),0x38,1);
+        styledLine(out,line.substring(8,12)+" "+line.substring(12,16),0x38,1);
+        styledLine(out,line.substring(16,20),0x38,1);
       } else {
         styledLine(out,line,0,0);
       }
