@@ -47,8 +47,37 @@ public class MainActivity extends Activity {
   String receipt(JSONObject o){return "IING STD TOKEN LISTRIK\n------------------------------\nNama: "+o.optString("name")+"\nNo Meter: "+o.optString("meter")+"\nNominal: "+money(o.optString("amount"))+"\nHarga: "+money(o.optString("price"))+"\nTanggal: "+o.optString("date")+"\nTOKEN:\n"+o.optString("token")+"\n------------------------------\nSimpan nomor token Anda\n";}
   void pricePage(){panel();header("Atur Daftar Harga");for(String a:amounts){label("Token "+money(a),16);EditText e=field("Harga jual",2);e.setText(getPrice(a));button("Simpan harga "+money(a),()->{try{long p=Long.parseLong(val(e));if(p<0)throw new Exception();prices.put(a,String.valueOf(p));save();toast("Harga tersimpan");}catch(Exception x){toast("Masukkan harga yang valid");}});}button("Kembali",()->home());}
   void history(){panel();header("Riwayat Transaksi");EditText search=field("Cari nama / nomor meter",1);LinearLayout list=new LinearLayout(this);list.setOrientation(1);root.addView(list);Runnable render=()->{list.removeAllViews();String q=val(search).toLowerCase();for(int i=records.length()-1;i>=0;i--){JSONObject o=records.optJSONObject(i);if(o==null)continue;if(!(o.optString("name")+" "+o.optString("meter")).toLowerCase().contains(q))continue;Button b=new Button(this);b.setAllCaps(false);b.setText(o.optString("name")+" • "+money(o.optString("amount"))+"\n"+o.optString("date"));list.addView(b);b.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Detail token").setMessage(receipt(o)).setPositiveButton("Cetak",(d,w)->{lastReceipt=receipt(o);print();}).setNeutralButton("Salin Token",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Token PLN",o.optString("token")));toast("Token disalin");}).setNegativeButton("Tutup",null).show());}};search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){render.run();}public void afterTextChanged(android.text.Editable e){}});render.run();button("Kembali",()->home());}
+  void styledLine(OutputStream out,String line,int mode,int align) throws Exception {
+    out.write(new byte[]{27,97,(byte)align,27,33,(byte)mode});
+    out.write((line+"\n").getBytes("UTF-8"));
+    out.write(new byte[]{27,33,0,27,97,0});
+  }
+  void printReceipt(OutputStream out,String data) throws Exception {
+    out.write(new byte[]{27,64});
+    for(String line:data.split("\\n")){
+      if(line.startsWith("IING STD TOKEN")) {
+        styledLine(out,"IING STD",0x18,1);
+        styledLine(out,"TOKEN LISTRIK",0x08,1);
+      } else if(line.startsWith("Nama: ")){
+        styledLine(out,"NAMA PELANGGAN",0x08,0);
+        String n=line.substring(6);
+        // Bold double-height: long customer names still fit the 58mm width.
+        styledLine(out,n,0x18,0);
+      } else if(line.equals("TOKEN:")){
+        styledLine(out,"NOMOR TOKEN PLN",0x08,1);
+      } else if(line.matches("[0-9]{20}")){
+        // Ten digits per line fit at double width on common 58mm printers.
+        styledLine(out,line.substring(0,10),0x38,1);
+        styledLine(out,line.substring(10),0x38,1);
+      } else {
+        styledLine(out,line,0,0);
+      }
+    }
+    out.write(new byte[]{10,10,10});
+    out.flush();
+  }
   void print(){if(lastReceipt.isEmpty()){toast("Belum ada struk");return;}if(Build.VERSION.SDK_INT>=31&&checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},10);toast("Izinkan Bluetooth lalu tekan Cetak lagi");return;}
-    BluetoothAdapter adapter=BluetoothAdapter.getDefaultAdapter();if(adapter==null){toast("Bluetooth tidak tersedia");return;}Set<BluetoothDevice> paired=adapter.getBondedDevices();if(paired.isEmpty()){toast("Pasangkan printer melalui pengaturan Bluetooth dulu");return;}ArrayList<BluetoothDevice> devices=new ArrayList<>(paired);String[] names=new String[devices.size()];for(int i=0;i<names.length;i++)names[i]=devices.get(i).getName();new AlertDialog.Builder(this).setTitle("Pilih printer Bluetooth").setItems(names,(d,i)->{BluetoothDevice device=devices.get(i);String data=lastReceipt;new Thread(()->{BluetoothSocket socket=null;try{socket=device.createRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));socket.connect();OutputStream out=socket.getOutputStream();out.write(new byte[]{27,64});out.write(data.getBytes("UTF-8"));out.write(new byte[]{10,10,10});out.flush();runOnUiThread(()->toast("Struk terkirim"));}catch(Exception e){runOnUiThread(()->toast("Gagal cetak: "+e.getMessage()));}finally{try{if(socket!=null)socket.close();}catch(Exception ignored){}}}).start();}).show();
+    BluetoothAdapter adapter=BluetoothAdapter.getDefaultAdapter();if(adapter==null){toast("Bluetooth tidak tersedia");return;}Set<BluetoothDevice> paired=adapter.getBondedDevices();if(paired.isEmpty()){toast("Pasangkan printer melalui pengaturan Bluetooth dulu");return;}ArrayList<BluetoothDevice> devices=new ArrayList<>(paired);String[] names=new String[devices.size()];for(int i=0;i<names.length;i++)names[i]=devices.get(i).getName();new AlertDialog.Builder(this).setTitle("Pilih printer Bluetooth").setItems(names,(d,i)->{BluetoothDevice device=devices.get(i);String data=lastReceipt;new Thread(()->{BluetoothSocket socket=null;try{socket=device.createRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));socket.connect();OutputStream out=socket.getOutputStream();printReceipt(out,data);runOnUiThread(()->toast("Struk terkirim"));}catch(Exception e){runOnUiThread(()->toast("Gagal cetak: "+e.getMessage()));}finally{try{if(socket!=null)socket.close();}catch(Exception ignored){}}}).start();}).show();
   }
   void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
 }
