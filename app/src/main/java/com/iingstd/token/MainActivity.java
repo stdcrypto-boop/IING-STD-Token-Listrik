@@ -22,14 +22,19 @@ import java.util.*;
 
 public class MainActivity extends Activity {
   LinearLayout root; EditText name,meter,token; Spinner nominal; TextView priceText;
-  JSONArray records = new JSONArray(); JSONObject prices = new JSONObject();
+  JSONArray records = new JSONArray(); JSONObject prices = new JSONObject(); JSONArray customers = new JSONArray();
   String[] amounts={"5000","10000","15000","20000","50000","100000","200000","500000","1000000"};
   int green=Color.rgb(4,120,87);
   String lastReceipt="";
   String money(String v){try{return "Rp"+String.format(new Locale("id","ID"),"%,d",Long.parseLong(v)).replace(',','.');}catch(Exception e){return "Rp0";}}
   String val(EditText e){return e.getText().toString().trim();}
-  void load(){try{records=new JSONArray(getPreferences(0).getString("records","[]"));prices=new JSONObject(getPreferences(0).getString("prices","{}"));}catch(Exception e){}}
-  void save(){getPreferences(0).edit().putString("records",records.toString()).putString("prices",prices.toString()).apply();}
+  void load(){try{records=new JSONArray(getPreferences(0).getString("records","[]"));prices=new JSONObject(getPreferences(0).getString("prices","{}"));customers=new JSONArray(getPreferences(0).getString("customers","[]"));}catch(Exception e){} migrateCustomers();}
+  void save(){getPreferences(0).edit().putString("records",records.toString()).putString("prices",prices.toString()).putString("customers",customers.toString()).apply();}
+  int customerIndex(String meterId){for(int i=0;i<customers.length();i++){JSONObject o=customers.optJSONObject(i);if(o!=null&&meterId.equals(o.optString("meter")))return i;}return -1;}
+  void saveCustomer(String n,String m){if(n.isEmpty()||m.isEmpty())return;try{JSONObject o=new JSONObject();o.put("name",n);o.put("meter",m);int index=customerIndex(m);if(index>=0)customers.put(index,o);else customers.put(o);save();}catch(Exception ignored){}}
+  void migrateCustomers(){if(getPreferences(0).getBoolean("customers_migrated",false))return;for(int i=0;i<records.length();i++){JSONObject o=records.optJSONObject(i);if(o!=null)saveCustomer(o.optString("name"),o.optString("meter"));}getPreferences(0).edit().putBoolean("customers_migrated",true).apply();}
+  void deleteCustomer(int index){JSONArray next=new JSONArray();for(int i=0;i<customers.length();i++)if(i!=index)next.put(customers.opt(i));customers=next;save();}
+
   String getPrice(String a){
     String fallback;
     switch(a){
@@ -80,17 +85,56 @@ public class MainActivity extends Activity {
     TextView brand=new TextView(this);brand.setText("⚡ IING STD");brand.setTextColor(Color.WHITE);brand.setTextSize(29);brand.setLetterSpacing(0.07f);brand.setTypeface(Typeface.create("sans-serif-black",Typeface.BOLD));banner.addView(brand);
     TextView subtitle=new TextView(this);subtitle.setText(title);subtitle.setTextColor(Color.rgb(209,250,229));subtitle.setTextSize(17);subtitle.setPadding(0,dp(4),0,0);banner.addView(subtitle);
   }
-  void home(){panel();header("Token Listrik");button("＋ Transaksi Baru",()->form());button("☰ Daftar Harga",()->pricePage());button("◷ Riwayat Transaksi",()->history());label("Data disimpan offline di HP. Nama dan nomor meter pelanggan dapat dipakai kembali.",15);}
+  void home(){panel();header("Token Listrik");button("＋ Transaksi Baru",()->form());button("👥 Daftar Pelanggan",()->customerPage());button("☰ Daftar Harga",()->pricePage());button("◷ Riwayat Transaksi",()->history());label("Data disimpan offline di HP. Nama dan nomor meter pelanggan dapat dipakai kembali.",15);}
   void form(){panel();header("Catat Token Listrik");label("Nama pelanggan",16);name=field("Nama pelanggan",1);label("Nomor meter / ID PLN",16);meter=field("Nomor meter",2);label("Pilih nominal token",16);
     nominal=new Spinner(this);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Rp5.000","Rp10.000","Rp15.000","Rp20.000","Rp50.000","Rp100.000","Rp200.000","Rp500.000","Rp1.000.000"});nominal.setAdapter(adapter);root.addView(nominal);
     priceText=label("",20);nominal.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){priceText.setText("Harga jual: "+money(getPrice(amounts[pos])));}});
     label("Nomor token (20 digit)",16);token=field("Masukkan 20 angka",2);token.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(20)});
-    button("Simpan Transaksi",()->store());button("Cari Pelanggan Tersimpan",()->chooseCustomer());button("Kembali",()->home());
+    button("Pilih Pelanggan Tersimpan",()->chooseCustomer());button("Simpan Transaksi",()->store());button("Kembali",()->home());
   }
-  void chooseCustomer(){LinkedHashMap<String,String> map=new LinkedHashMap<>();for(int i=records.length()-1;i>=0;i--){JSONObject o=records.optJSONObject(i);if(o!=null)map.put(o.optString("name"),o.optString("meter"));}
-    if(map.isEmpty()){toast("Belum ada pelanggan tersimpan");return;}String[] names=map.keySet().toArray(new String[0]);new AlertDialog.Builder(this).setTitle("Pilih pelanggan").setItems(names,(d,i)->{name.setText(names[i]);meter.setText(map.get(names[i]));}).show();}
+  void chooseCustomer(){
+    if(customers.length()==0){new AlertDialog.Builder(this).setMessage("Belum ada pelanggan. Tambahkan pelanggan terlebih dahulu.").setPositiveButton("Tambah", (d,w)->editCustomer(-1,false)).setNegativeButton("Batal",null).show();return;}
+    String[] options=new String[customers.length()];
+    for(int i=0;i<options.length;i++){JSONObject o=customers.optJSONObject(i);options[i]=o.optString("name")+" - "+o.optString("meter");}
+    new AlertDialog.Builder(this).setTitle("Pilih Pelanggan").setItems(options,(d,i)->{JSONObject o=customers.optJSONObject(i);if(o!=null){name.setText(o.optString("name"));meter.setText(o.optString("meter"));}}).setNegativeButton("Batal",null).show();
+  }
+  void customerPage(){
+    panel();header("Daftar Pelanggan");button("＋ Tambah Pelanggan",()->editCustomer(-1,true));
+    if(customers.length()==0)label("Belum ada pelanggan tersimpan.",16);
+    for(int i=0;i<customers.length();i++){
+      final int index=i;JSONObject o=customers.optJSONObject(i);if(o==null)continue;
+      button("👤 "+o.optString("name")+"\\n"+o.optString("meter"),()->new AlertDialog.Builder(this).setTitle(o.optString("name"))
+        .setItems(new String[]{"Gunakan untuk transaksi","Edit pelanggan","Hapus pelanggan"},(d,which)->{
+          if(which==0){form();name.setText(o.optString("name"));meter.setText(o.optString("meter"));}
+          if(which==1)editCustomer(index,true);
+          if(which==2)new AlertDialog.Builder(this).setTitle("Hapus pelanggan?")
+            .setMessage("Hanya menghapus dari daftar pelanggan. Riwayat transaksi tetap tersimpan.")
+            .setPositiveButton("Hapus",(dialog,w)->{deleteCustomer(index);customerPage();})
+            .setNegativeButton("Batal",null).show();
+        }).show());
+    }
+    button("Kembali",()->home());
+  }
+  void editCustomer(int index,boolean returnToList){
+    JSONObject old=index>=0?customers.optJSONObject(index):null;
+    LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setPadding(dp(20),dp(8),dp(20),0);
+    EditText n=new EditText(this);n.setSingleLine(true);n.setHint("Nama pelanggan");n.setInputType(1);if(old!=null)n.setText(old.optString("name"));layout.addView(n);
+    EditText m=new EditText(this);m.setSingleLine(true);m.setHint("Nomor meter / ID PLN");m.setInputType(2);if(old!=null)m.setText(old.optString("meter"));layout.addView(m);
+    AlertDialog dialog=new AlertDialog.Builder(this).setTitle(index<0?"Tambah Pelanggan":"Edit Pelanggan").setView(layout)
+      .setPositiveButton("Simpan",null).setNegativeButton("Batal",null).create();
+    dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(btn->{
+      String nv=n.getText().toString().trim(),mv=m.getText().toString().trim();
+      if(nv.isEmpty()||mv.isEmpty()){toast("Nama dan nomor meter wajib diisi");return;}
+      int existing=customerIndex(mv);
+      if(existing>=0&&existing!=index){toast("Nomor meter sudah terdaftar");return;}
+      if(index>=0&&old!=null&&!mv.equals(old.optString("meter")))deleteCustomer(index);
+      saveCustomer(nv,mv);dialog.dismiss();
+      if(returnToList)customerPage();else{if(name!=null&&meter!=null){name.setText(nv);meter.setText(mv);}}
+    }));
+    dialog.show();
+  }
   void store(){String t=val(token).replace(" ","");if(val(name).isEmpty()||val(meter).isEmpty()){toast("Isi nama dan nomor meter");return;}if(!t.matches("[0-9]{20}")){toast("Token harus 20 digit angka");return;}
-    try{JSONObject o=new JSONObject();String a=amounts[nominal.getSelectedItemPosition()];o.put("name",val(name));o.put("meter",val(meter));o.put("token",t);o.put("amount",a);o.put("price",getPrice(a));o.put("date",new SimpleDateFormat("dd/MM/yyyy HH:mm",Locale.getDefault()).format(new Date()));records.put(o);save();lastReceipt=receipt(o);new AlertDialog.Builder(this).setTitle("Berhasil disimpan").setMessage(lastReceipt).setPositiveButton("Cetak", (d,w)->print()).setNegativeButton("Selesai",(d,w)->home()).show();}catch(Exception e){toast("Gagal menyimpan");}
+    try{JSONObject o=new JSONObject();String a=amounts[nominal.getSelectedItemPosition()];o.put("name",val(name));o.put("meter",val(meter));o.put("token",t);o.put("amount",a);o.put("price",getPrice(a));o.put("date",new SimpleDateFormat("dd/MM/yyyy HH:mm",Locale.getDefault()).format(new Date()));records.put(o);saveCustomer(val(name),val(meter));save();lastReceipt=receipt(o);new AlertDialog.Builder(this).setTitle("Berhasil disimpan").setMessage(lastReceipt).setPositiveButton("Cetak", (d,w)->print()).setNegativeButton("Selesai",(d,w)->home()).show();}catch(Exception e){toast("Gagal menyimpan");}
   }
   String receipt(JSONObject o){return "IING STD TOKEN LISTRIK\n------------------------------\nNama: "+o.optString("name")+"\nNo Meter: "+o.optString("meter")+"\nNominal: "+money(o.optString("amount"))+"\nHarga: "+money(getPrice(o.optString("amount")))+"\nTanggal: "+o.optString("date")+"\nTOKEN:\n"+o.optString("token")+"\n------------------------------\nSimpan nomor token Anda\n";}
   void pricePage(){panel();header("Atur Daftar Harga");for(String a:amounts){label("Token "+money(a),16);EditText e=field("Harga jual",2);e.setText(getPrice(a));button("Simpan harga "+money(a),()->{try{long p=Long.parseLong(val(e));if(p<0)throw new Exception();prices.put(a,String.valueOf(p));save();toast("Harga tersimpan");}catch(Exception x){toast("Masukkan harga yang valid");}});}button("Kembali",()->home());}
