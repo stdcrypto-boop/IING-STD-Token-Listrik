@@ -85,7 +85,7 @@ public class MainActivity extends Activity {
     TextView brand=new TextView(this);brand.setText("⚡ IING STD");brand.setTextColor(Color.WHITE);brand.setTextSize(29);brand.setLetterSpacing(0.07f);brand.setTypeface(Typeface.create("sans-serif-black",Typeface.BOLD));banner.addView(brand);
     TextView subtitle=new TextView(this);subtitle.setText(title);subtitle.setTextColor(Color.rgb(209,250,229));subtitle.setTextSize(17);subtitle.setPadding(0,dp(4),0,0);banner.addView(subtitle);
   }
-  void home(){panel();header("Token Listrik");button("＋ Transaksi Baru",()->form());button("👥 Daftar Pelanggan",()->customerPage());button("☰ Daftar Harga",()->pricePage());button("◷ Riwayat Transaksi",()->history());label("Data disimpan offline di HP. Nama dan nomor meter pelanggan dapat dipakai kembali.",15);}
+  void home(){panel();header("Token Listrik");button("＋ Transaksi Baru",()->form());button("👥 Daftar Pelanggan",()->customerPage());button("🖨 Ganti Printer Bluetooth",()->printerSettings());button("☰ Daftar Harga",()->pricePage());button("◷ Riwayat Transaksi",()->history());label("Data disimpan offline di HP. Nama dan nomor meter pelanggan dapat dipakai kembali.",15);}
   void form(){panel();header("Catat Token Listrik");label("Nama pelanggan",16);name=field("Nama pelanggan",1);label("Nomor meter / ID PLN",16);meter=field("Nomor meter",2);label("Pilih nominal token",16);
     nominal=new Spinner(this);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Rp5.000","Rp10.000","Rp15.000","Rp20.000","Rp50.000","Rp100.000","Rp200.000","Rp500.000","Rp1.000.000"});nominal.setAdapter(adapter);root.addView(nominal);
     priceText=label("",20);nominal.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){priceText.setText("Harga jual: "+money(getPrice(amounts[pos])));}});
@@ -201,48 +201,84 @@ public class MainActivity extends Activity {
     if(lastReceipt.isEmpty()){toast("Belum ada struk");return;}
     if(Build.VERSION.SDK_INT>=31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED){
       requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},10);
-      toast("Izinkan perangkat terdekat, lalu tekan Cetak lagi");return;
+      toast("Izinkan perangkat terdekat lalu coba cetak lagi");return;
     }
     BluetoothAdapter adapter=BluetoothAdapter.getDefaultAdapter();
-    if(adapter==null){toast("HP tidak mendukung Bluetooth");return;}
+    if(adapter==null){toast("Bluetooth tidak tersedia");return;}
     try{
-      if(!adapter.isEnabled()){
-        openBluetoothSettings("Bluetooth HP belum aktif.");return;
-      }
+      if(!adapter.isEnabled()){openBluetoothSettings("Bluetooth HP belum aktif.");return;}
       Set<BluetoothDevice> paired=adapter.getBondedDevices();
-      if(paired==null||paired.isEmpty()){
-        openBluetoothSettings("Printer belum terdaftar sebagai perangkat yang dipasangkan.");return;
-      }
+      if(paired==null||paired.isEmpty()){openBluetoothSettings("Printer belum dipasangkan.");return;}
       ArrayList<BluetoothDevice> devices=new ArrayList<>(paired);
-      String[] names=new String[devices.size()];
-      for(int i=0;i<names.length;i++){
-        String n=devices.get(i).getName();
-        names[i]=(n==null||n.trim().isEmpty()?"Perangkat Bluetooth":n)+" ("+devices.get(i).getAddress()+")";
+      String saved=getPreferences(0).getString("printer_mac","");
+      for(BluetoothDevice d:devices){
+        if(!saved.isEmpty()&&saved.equals(d.getAddress())){sendToPrinter(adapter,d,lastReceipt);return;}
       }
-      new AlertDialog.Builder(this).setTitle("Pilih printer Bluetooth")
-        .setItems(names,(d,i)->{
-          BluetoothDevice device=devices.get(i);String data=lastReceipt;
-          new Thread(()->{
-            BluetoothSocket socket=null;
-            try{
-              socket=device.createRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));
-              socket.connect();
-              OutputStream out=socket.getOutputStream();
-              printReceipt(out,data);
-              runOnUiThread(()->toast("Struk berhasil dikirim ke printer"));
-            }catch(Exception e){
-              runOnUiThread(()->new AlertDialog.Builder(this).setTitle("Gagal terhubung")
-                .setMessage("Pastikan printer menyala dan tidak sedang dipakai aplikasi lain.\\n\\nDetail: "+e.getMessage())
-                .setPositiveButton("Coba Lagi",(dialog,which)->print())
-                .setNegativeButton("Tutup",null).show());
-            }finally{try{if(socket!=null)socket.close();}catch(Exception ignored){}}
-          }).start();
-        }).setNeutralButton("Pengaturan Bluetooth",(d,w)->startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)))
-        .setNegativeButton("Batal",null).show();
-    }catch(SecurityException e){
-      if(Build.VERSION.SDK_INT>=31)requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},10);
-      else toast("Izin Bluetooth belum diberikan");
+      choosePrinter(adapter,devices);
+    }catch(SecurityException e){toast("Izin Bluetooth belum diberikan");}
+  }
+  void choosePrinter(BluetoothAdapter adapter,ArrayList<BluetoothDevice> devices){
+    String[] names=new String[devices.size()];
+    for(int i=0;i<devices.size();i++){
+      BluetoothDevice d=devices.get(i);
+      String n=d.getName();
+      names[i]=(n==null||n.isEmpty()?"Perangkat Bluetooth":n)+" ("+d.getAddress()+")";
     }
+    new AlertDialog.Builder(this).setTitle("Pilih printer untuk disimpan")
+      .setItems(names,(dialog,i)->{
+        BluetoothDevice selected=devices.get(i);
+        getPreferences(0).edit().putString("printer_mac",selected.getAddress()).apply();
+        sendToPrinter(adapter,selected,lastReceipt);
+      })
+      .setNeutralButton("Pengaturan Bluetooth",(dialog,w)->startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)))
+      .setNegativeButton("Batal",null).show();
+  }
+  void printerSettings(){
+    if(Build.VERSION.SDK_INT>=31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED){
+      requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},10);return;
+    }
+    BluetoothAdapter adapter=BluetoothAdapter.getDefaultAdapter();
+    if(adapter==null){toast("Bluetooth tidak tersedia");return;}
+    try{
+      Set<BluetoothDevice> paired=adapter.getBondedDevices();
+      if(paired==null||paired.isEmpty()){openBluetoothSettings("Belum ada printer yang dipasangkan.");return;}
+      choosePrinterOnly(new ArrayList<>(paired));
+    }catch(SecurityException e){toast("Izin Bluetooth diperlukan");}
+  }
+  void choosePrinterOnly(ArrayList<BluetoothDevice> devices){
+    String[] names=new String[devices.size()];
+    for(int i=0;i<devices.size();i++){BluetoothDevice d=devices.get(i);names[i]=d.getName()+" ("+d.getAddress()+")";}
+    new AlertDialog.Builder(this).setTitle("Ganti printer otomatis").setItems(names,(dialog,i)->{
+      getPreferences(0).edit().putString("printer_mac",devices.get(i).getAddress()).apply();
+      toast("Printer disimpan. Cetakan berikutnya otomatis.");
+    }).setNegativeButton("Batal",null).show();
+  }
+  void sendToPrinter(BluetoothAdapter adapter,BluetoothDevice device,String data){
+    toast("Mengirim struk ke printer...");
+    new Thread(()->{
+      BluetoothSocket socket=null;
+      try{
+        socket=device.createRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));
+        socket.connect();
+        OutputStream out=socket.getOutputStream();
+        // A single receipt is small; flush once, then allow the printer buffer to drain.
+        printReceipt(out,data);
+        Thread.sleep(1500);
+        runOnUiThread(()->new AlertDialog.Builder(this).setTitle("Data cetak terkirim")
+          .setMessage("Struk sudah dikirim ke "+device.getName()+". Apakah kertas tercetak dengan benar?")
+          .setPositiveButton("Sudah",null)
+          .setNegativeButton("Belum",(d,w)->new AlertDialog.Builder(this).setTitle("Periksa printer")
+            .setMessage("Periksa kertas, daya printer, dan apakah printer dipakai aplikasi lain. Kamu juga bisa mengganti printer tersimpan.")
+            .setPositiveButton("Ganti Printer",(dd,ww)->printerSettings()).setNegativeButton("Tutup",null).show())
+          .show());
+      }catch(Exception e){
+        String message=e.getMessage();
+        runOnUiThread(()->new AlertDialog.Builder(this).setTitle("Gagal mengirim struk")
+          .setMessage(message==null?"Koneksi printer gagal":message)
+          .setPositiveButton("Ganti Printer",(d,w)->printerSettings())
+          .setNegativeButton("Tutup",null).show());
+      }finally{try{if(socket!=null)socket.close();}catch(Exception ignored){}}
+    }).start();
   }
   void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
 }
