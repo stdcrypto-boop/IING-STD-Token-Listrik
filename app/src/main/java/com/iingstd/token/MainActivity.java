@@ -8,6 +8,11 @@ import android.content.*;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.drawable.GradientDrawable;
 import android.view.*;
 import android.widget.*;
 import org.json.*;
@@ -50,11 +55,31 @@ public class MainActivity extends Activity {
     }catch(Exception ignored){}
   }
   public void onCreate(Bundle b){super.onCreate(b);load();applyRequestedPricesOnce();home();}
-  LinearLayout panel(){root=new LinearLayout(this);root.setOrientation(1);root.setPadding(24,22,24,20);root.setBackgroundColor(Color.rgb(247,250,248));ScrollView s=new ScrollView(this);s.addView(root);setContentView(s);return root;}
+  int dp(int v){return (int)(getResources().getDisplayMetrics().density*v+0.5f);}
+  GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
+  LinearLayout panel(){
+    root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(18),dp(18),dp(18),dp(24));root.setBackgroundColor(Color.rgb(240,247,244));
+    ScrollView sc=new ScrollView(this);sc.setFillViewport(true);sc.addView(root);setContentView(sc);return root;
+  }
   TextView label(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(Color.rgb(20,50,40));t.setPadding(0,12,0,12);root.addView(t);return t;}
-  Button button(String s,Runnable r){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(green));root.addView(b);b.setOnClickListener(v->r.run());return b;}
-  EditText field(String hint,int type){EditText e=new EditText(this);e.setHint(hint);e.setTextSize(18);e.setInputType(type);e.setSingleLine(true);root.addView(e);return e;}
-  void header(String title){label("⚡ IING STD",26).setTypeface(null,Typeface.BOLD);label(title,19);}
+  Button button(String s,Runnable r){
+    Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextSize(16);b.setTypeface(null,Typeface.BOLD);b.setTextColor(Color.WHITE);
+    b.setBackground(shape(green,14));b.setElevation(dp(3));b.setPadding(dp(12),dp(12),dp(12),dp(12));
+    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(56));p.setMargins(0,dp(6),0,dp(8));root.addView(b,p);b.setOnClickListener(v->r.run());return b;
+  }
+  EditText field(String hint,int type){
+    EditText e=new EditText(this);e.setHint(hint);e.setTextSize(18);e.setInputType(type);e.setSingleLine(true);
+    GradientDrawable bg=shape(Color.WHITE,12);bg.setStroke(dp(1),Color.rgb(204,224,216));e.setBackground(bg);e.setPadding(dp(14),0,dp(14),0);
+    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(54));p.setMargins(0,dp(3),0,dp(10));root.addView(e,p);return e;
+  }
+  void header(String title){
+    LinearLayout banner=new LinearLayout(this);banner.setOrientation(1);banner.setPadding(dp(20),dp(18),dp(20),dp(18));
+    GradientDrawable bg=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{Color.rgb(3,73,57),Color.rgb(5,150,105)});
+    bg.setCornerRadius(dp(20));banner.setBackground(bg);banner.setElevation(dp(4));
+    LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,-2);bp.setMargins(0,0,0,dp(18));root.addView(banner,bp);
+    TextView brand=new TextView(this);brand.setText("⚡ IING STD");brand.setTextColor(Color.WHITE);brand.setTextSize(29);brand.setLetterSpacing(0.07f);brand.setTypeface(Typeface.create("sans-serif-black",Typeface.BOLD));banner.addView(brand);
+    TextView subtitle=new TextView(this);subtitle.setText(title);subtitle.setTextColor(Color.rgb(209,250,229));subtitle.setTextSize(17);subtitle.setPadding(0,dp(4),0,0);banner.addView(subtitle);
+  }
   void home(){panel();header("Token Listrik");button("＋ Transaksi Baru",()->form());button("☰ Daftar Harga",()->pricePage());button("◷ Riwayat Transaksi",()->history());label("Data disimpan offline di HP. Nama dan nomor meter pelanggan dapat dipakai kembali.",15);}
   void form(){panel();header("Catat Token Listrik");label("Nama pelanggan",16);name=field("Nama pelanggan",1);label("Nomor meter / ID PLN",16);meter=field("Nomor meter",2);label("Pilih nominal token",16);
     nominal=new Spinner(this);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Rp5.000","Rp10.000","Rp15.000","Rp20.000","Rp50.000","Rp100.000","Rp200.000","Rp500.000","Rp1.000.000"});nominal.setAdapter(adapter);root.addView(nominal);
@@ -70,6 +95,24 @@ public class MainActivity extends Activity {
   String receipt(JSONObject o){return "IING STD TOKEN LISTRIK\n------------------------------\nNama: "+o.optString("name")+"\nNo Meter: "+o.optString("meter")+"\nNominal: "+money(o.optString("amount"))+"\nHarga: "+money(getPrice(o.optString("amount")))+"\nTanggal: "+o.optString("date")+"\nTOKEN:\n"+o.optString("token")+"\n------------------------------\nSimpan nomor token Anda\n";}
   void pricePage(){panel();header("Atur Daftar Harga");for(String a:amounts){label("Token "+money(a),16);EditText e=field("Harga jual",2);e.setText(getPrice(a));button("Simpan harga "+money(a),()->{try{long p=Long.parseLong(val(e));if(p<0)throw new Exception();prices.put(a,String.valueOf(p));save();toast("Harga tersimpan");}catch(Exception x){toast("Masukkan harga yang valid");}});}button("Kembali",()->home());}
   void history(){panel();header("Riwayat Transaksi");EditText search=field("Cari nama / nomor meter",1);LinearLayout list=new LinearLayout(this);list.setOrientation(1);root.addView(list);Runnable render=()->{list.removeAllViews();String q=val(search).toLowerCase();for(int i=records.length()-1;i>=0;i--){JSONObject o=records.optJSONObject(i);if(o==null)continue;if(!(o.optString("name")+" "+o.optString("meter")).toLowerCase().contains(q))continue;Button b=new Button(this);b.setAllCaps(false);b.setText(o.optString("name")+" • "+money(o.optString("amount"))+"\n"+o.optString("date"));list.addView(b);b.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Detail token").setMessage(receipt(o)).setPositiveButton("Cetak",(d,w)->{lastReceipt=receipt(o);print();}).setNeutralButton("Salin Token",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Token PLN",o.optString("token")));toast("Token disalin");}).setNegativeButton("Tutup",null).show());}};search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){render.run();}public void afterTextChanged(android.text.Editable e){}});render.run();button("Kembali",()->home());}
+  // Black-and-white lightning emblem printed as ESC/POS raster graphics (58mm compatible).
+  void printLogo(OutputStream out) throws Exception {
+    final int width=96,height=96;
+    Bitmap bitmap=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
+    Canvas canvas=new Canvas(bitmap);canvas.drawColor(Color.WHITE);
+    Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(Color.BLACK);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(5);
+    canvas.drawCircle(48,48,43,paint);
+    paint.setStyle(Paint.Style.FILL);
+    Path bolt=new Path();bolt.moveTo(54,9);bolt.lineTo(24,53);bolt.lineTo(44,53);bolt.lineTo(38,87);bolt.lineTo(76,39);bolt.lineTo(53,39);bolt.close();canvas.drawPath(bolt,paint);
+    int bytesPerRow=width/8;
+    out.write(new byte[]{27,97,1,29,118,48,0,(byte)bytesPerRow,0,(byte)(height&255),(byte)(height>>8)});
+    for(int y=0;y<height;y++)for(int x=0;x<width;x+=8){
+      int bits=0;
+      for(int k=0;k<8;k++){int color=bitmap.getPixel(x+k,y);int lum=(Color.red(color)+Color.green(color)+Color.blue(color))/3;if(lum<128)bits|=(128>>k);}
+      out.write(bits);
+    }
+    out.write(10);out.write(new byte[]{27,97,0});bitmap.recycle();
+  }
   void styledLine(OutputStream out,String line,int mode,int align) throws Exception {
     out.write(new byte[]{27,97,(byte)align,27,33,(byte)mode});
     out.write((line+"\n").getBytes("UTF-8"));
@@ -77,6 +120,7 @@ public class MainActivity extends Activity {
   }
   void printReceipt(OutputStream out,String data) throws Exception {
     out.write(new byte[]{27,64});
+    printLogo(out);
     for(String line:data.split("\\n")){
       if(line.startsWith("IING STD TOKEN")) {
         styledLine(out,"IING STD",0x18,1);
