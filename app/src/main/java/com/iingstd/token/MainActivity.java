@@ -25,8 +25,31 @@ public class MainActivity extends Activity {
   String val(EditText e){return e.getText().toString().trim();}
   void load(){try{records=new JSONArray(getPreferences(0).getString("records","[]"));prices=new JSONObject(getPreferences(0).getString("prices","{}"));}catch(Exception e){}}
   void save(){getPreferences(0).edit().putString("records",records.toString()).putString("prices",prices.toString()).apply();}
-  String getPrice(String a){return prices.optString(a,String.valueOf(Long.parseLong(a)+3000));}
-  public void onCreate(Bundle b){super.onCreate(b);load();home();}
+  String getPrice(String a){
+    String fallback;
+    switch(a){
+      case "5000": fallback="9000"; break;
+      case "10000": fallback="14000"; break;
+      case "15000": fallback="19000"; break;
+      case "20000": fallback="24000"; break;
+      case "50000": fallback="55000"; break;
+      case "100000": fallback="105000"; break;
+      case "500000": fallback="510000"; break;
+      case "1000000": fallback="1010000"; break;
+      default: fallback=String.valueOf(Long.parseLong(a)+3000);
+    }
+    return prices.optString(a,fallback);
+  }
+  void applyRequestedPricesOnce(){
+    if(getPreferences(0).getBoolean("requested_prices_v2",false))return;
+    String[][] requested={{"5000","9000"},{"10000","14000"},{"15000","19000"},{"20000","24000"},{"50000","55000"},{"100000","105000"},{"500000","510000"},{"1000000","1010000"}};
+    try{
+      for(String[] item:requested)prices.put(item[0],item[1]);
+      save();
+      getPreferences(0).edit().putBoolean("requested_prices_v2",true).apply();
+    }catch(Exception ignored){}
+  }
+  public void onCreate(Bundle b){super.onCreate(b);load();applyRequestedPricesOnce();home();}
   LinearLayout panel(){root=new LinearLayout(this);root.setOrientation(1);root.setPadding(24,22,24,20);root.setBackgroundColor(Color.rgb(247,250,248));ScrollView s=new ScrollView(this);s.addView(root);setContentView(s);return root;}
   TextView label(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(Color.rgb(20,50,40));t.setPadding(0,12,0,12);root.addView(t);return t;}
   Button button(String s,Runnable r){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(green));root.addView(b);b.setOnClickListener(v->r.run());return b;}
@@ -44,7 +67,7 @@ public class MainActivity extends Activity {
   void store(){String t=val(token).replace(" ","");if(val(name).isEmpty()||val(meter).isEmpty()){toast("Isi nama dan nomor meter");return;}if(!t.matches("[0-9]{20}")){toast("Token harus 20 digit angka");return;}
     try{JSONObject o=new JSONObject();String a=amounts[nominal.getSelectedItemPosition()];o.put("name",val(name));o.put("meter",val(meter));o.put("token",t);o.put("amount",a);o.put("price",getPrice(a));o.put("date",new SimpleDateFormat("dd/MM/yyyy HH:mm",Locale.getDefault()).format(new Date()));records.put(o);save();lastReceipt=receipt(o);new AlertDialog.Builder(this).setTitle("Berhasil disimpan").setMessage(lastReceipt).setPositiveButton("Cetak", (d,w)->print()).setNegativeButton("Selesai",(d,w)->home()).show();}catch(Exception e){toast("Gagal menyimpan");}
   }
-  String receipt(JSONObject o){return "IING STD TOKEN LISTRIK\n------------------------------\nNama: "+o.optString("name")+"\nNo Meter: "+o.optString("meter")+"\nNominal: "+money(o.optString("amount"))+"\nHarga: "+money(o.optString("price"))+"\nTanggal: "+o.optString("date")+"\nTOKEN:\n"+o.optString("token")+"\n------------------------------\nSimpan nomor token Anda\n";}
+  String receipt(JSONObject o){return "IING STD TOKEN LISTRIK\n------------------------------\nNama: "+o.optString("name")+"\nNo Meter: "+o.optString("meter")+"\nNominal: "+money(o.optString("amount"))+"\nHarga: "+money(getPrice(o.optString("amount")))+"\nTanggal: "+o.optString("date")+"\nTOKEN:\n"+o.optString("token")+"\n------------------------------\nSimpan nomor token Anda\n";}
   void pricePage(){panel();header("Atur Daftar Harga");for(String a:amounts){label("Token "+money(a),16);EditText e=field("Harga jual",2);e.setText(getPrice(a));button("Simpan harga "+money(a),()->{try{long p=Long.parseLong(val(e));if(p<0)throw new Exception();prices.put(a,String.valueOf(p));save();toast("Harga tersimpan");}catch(Exception x){toast("Masukkan harga yang valid");}});}button("Kembali",()->home());}
   void history(){panel();header("Riwayat Transaksi");EditText search=field("Cari nama / nomor meter",1);LinearLayout list=new LinearLayout(this);list.setOrientation(1);root.addView(list);Runnable render=()->{list.removeAllViews();String q=val(search).toLowerCase();for(int i=records.length()-1;i>=0;i--){JSONObject o=records.optJSONObject(i);if(o==null)continue;if(!(o.optString("name")+" "+o.optString("meter")).toLowerCase().contains(q))continue;Button b=new Button(this);b.setAllCaps(false);b.setText(o.optString("name")+" • "+money(o.optString("amount"))+"\n"+o.optString("date"));list.addView(b);b.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Detail token").setMessage(receipt(o)).setPositiveButton("Cetak",(d,w)->{lastReceipt=receipt(o);print();}).setNeutralButton("Salin Token",(d,w)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Token PLN",o.optString("token")));toast("Token disalin");}).setNegativeButton("Tutup",null).show());}};search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){render.run();}public void afterTextChanged(android.text.Editable e){}});render.run();button("Kembali",()->home());}
   void styledLine(OutputStream out,String line,int mode,int align) throws Exception {
